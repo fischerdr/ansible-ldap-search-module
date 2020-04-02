@@ -4,11 +4,16 @@
 # Copyright: (c) 2020, Sebastian Pfahl <eryx@gmx.net>
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
-ANSIBLE_METADATA = {'metadata_version': '1.1',
-                    'status': ['preview'],
-                    'supported_by': 'community'}
+from __future__ import absolute_import, division, print_function
+__metaclass__ = type
 
-DOCUMENTATION = """
+ANSIBLE_METADATA = {
+    'metadata_version': '1.1',
+    'status': ['preview'],
+    'supported_by': 'community'
+}
+
+DOCUMENTATION = r"""
 ---
 module: ldap_search
 short_description: Queries a LDAP server.
@@ -16,58 +21,49 @@ description:
     - Return the results of an LDAP search. Use Ansible's 'register' statement.
 notes:
     - Only supports Python3
-version_added: "1.0"
+version_added: "2.9"
 author: Sebastian Pfahl
 requirements:
     - python-ldap
 options:
     base:
         required: true
+        type: str
         description:
             - The LDAP search base.
     scope:
         required: false
-        choices: [base, onelevel, subordinate, children]
+        choices: [ base, onelevel, subordinate, children ]
         default: base
+        type: str
         description:
             - The LDAP scope to use.
     filter:
         required: false
         default: '(objectClass=*)'
+        type: str
         description:
-            - USed for filtering the LDAP search result.
+            - Used for filtering the LDAP search result.
     attrs:
         required: false
         default: none
+        type: raw
         description:
             - A list of attributes for limiting the result. Use an
               actual list or a comma-separated string.
     schema:
         required: false
         default: false
+        type: bool
         description:
             - Set to True to return the full attribute schema of entries, not
               their attribute values. Overrides C(attrs) when provided.
-    server_uri:
-        required: false
-        default: ldapi:///
+    params:
         description:
-            - An URI to the LDAP server. The default value looks for an UNIX
-              domain socket in its default location.
-    start_tls:
-        required: false
-        default: false
-        description:
-            - Set to True for enabling START_TLS LDAP extension.
-    bind_dn:
-        required: false
-        description:
-            - DN to the bind user. If provided a SASL bind with
-              the EXTERNAL mechanism is used. Leave blank for an anonymous bind.
-    bind_pw:
-        required: false
-        description:
-            - The password for the user specified in the C(bind_dn).
+            - Additional module parameters.
+        type: dict
+extends_documentation_fragment:
+    - ldap.documentation
 """
 
 EXAMPLES = """
@@ -75,7 +71,6 @@ EXAMPLES = """
 - ldap_search:
     base: "ou=groups,dc=example,dc=com"
   register: ldap_groups
-  become: True
 
 # Return GIDs for all groups
 - ldap_entry:
@@ -83,58 +78,73 @@ EXAMPLES = """
     scope: "onelevel"
     attrs: "gidNumber"
   register: ldap_group_gids
-  become: True
 """
 
-from traceback import format_exc
-from builtins import map
-from builtins import str
-from past.builtins import basestring
-from builtins import object
-from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.basic import BOOLEANS
+import traceback
 
-import ldap
-import ldap.modlist
-import ldap.sasl
+from ansible.module_utils.basic import AnsibleModule, missing_required_lib, BOOLEANS
+from ansible.module_utils._text import to_native, to_bytes
+from ansible.module_utils.ldap import LdapGeneric, gen_specs
+
+LDAP_IMP_ERR = None
+try:
+    import ldap
+
+    HAS_LDAP = True
+except ImportError:
+    LDAP_IMP_ERR = traceback.format_exc()
+    HAS_LDAP = False
 
 
 def main():
     module = AnsibleModule(
-        argument_spec={
-            'base': dict(required=True),
-            'scope': dict(default='base', choices=['base', 'onelevel', 'subordinate', 'children']),
-            'filter': dict(default='(objectClass=*)'),
-            'attrs': dict(default=None),
-            'schema': dict(default='false', choices=(list(BOOLEANS) + ['True', True, 'False', False])),
-            'server_uri': dict(default='ldapi:///'),
-            'start_tls': dict(default='false', choices=(list(BOOLEANS) + ['True', True, 'False', False])),
-            'bind_dn': dict(default=None),
-            'bind_pw': dict(default='', no_log=True),
-        },
-        supports_check_mode=False,
+        argument_spec=gen_specs(
+            base=dict(type='str', required=True),
+            scope=dict(type='str', default='base', choices=['base', 'onelevel', 'subordinate', 'children']),
+            filter=dict(type='str', default='(objectClass=*)'),
+            attrs=dict(type='raw', default=None),
+            schema=dict(type='bool', default='false', choices=(list(BOOLEANS) + ['True', True, 'False', False])),
+            params=dict(type='dict'),
+        ),
+        supports_check_mode=True,
     )
 
-    try:
-        LdapSearch(module).main()
-    except ldap.LDAPError as exception:
-        module.fail_json(msg=str(exception), exc=format_exc())
+    if not HAS_LDAP:
+        module.fail_json(msg=missing_required_lib('python-ldap'),
+                         exception=LDAP_IMP_ERR)
+
+    # Update module parameters with user's parameters if defined
+    if 'params' in module.params and isinstance(module.params['params'], dict):
+        module.params.update(module.params['params'])
+        # Remove the params
+        module.params.pop('params', None)
+
+    if not module.check_mode:
+        try:
+            LdapSearch(module).main()
+        except Exception as exception:
+            module.fail_json(msg="Attribute action failed.", details=to_native(exception))
+
+    module.exit_json(changed=True)
 
 
-class LdapSearch(object):
-    _connection = None
+def _extract_entry(dn, attrs):
+    extracted = {'dn': dn}
+    for attr, val in list(attrs.items()):
+        if len(val) == 1:
+            extracted[attr] = val[0]
+        else:
+            extracted[attr] = val
+    return extracted
 
+
+class LdapSearch(LdapGeneric):
     def __init__(self, module):
-        self.module = module
+        LdapGeneric.__init__(self, module)
 
         self.base = self.module.params['base']
         self.filterstr = self.module.params['filter']
-        self.server_uri = self.module.params['server_uri']
-        self.start_tls = self.module.boolean(self.module.params['start_tls'])
-        self.bind_dn = self.module.params['bind_dn']
-        self.bind_pw = self.module.params['bind_pw']
         self.attrlist = []
-
         self._load_scope()
         self._load_attrs()
         self._load_schema()
@@ -170,21 +180,15 @@ class LdapSearch(object):
                 self.attrlist = None
 
     def _load_attr_values(self, raw):
-        if isinstance(raw, basestring):
+        if isinstance(raw, str):
             values = raw.split(',')
         else:
             values = raw
 
-        if not (isinstance(values, list) and all(isinstance(value, basestring) for value in values)):
+        if not (isinstance(values, list) and all(isinstance(value, str) for value in values)):
             self.module.fail_json(msg="attrs must be a string or list of strings.")
 
-        return list(map(self._force_utf8, values))
-
-    def _force_utf8(self, value):
-        if isinstance(value, str):
-            value = value.encode('utf-8')
-
-        return value
+        return list(map(to_bytes, values))
 
     def main(self):
         results = self.perform_search()
@@ -202,40 +206,10 @@ class LdapSearch(object):
             if self.schema:
                 return [dict(dn=result[0], attrs=list(result[1].keys())) for result in results]
             else:
-                return [self._extract_entry(result[0], result[1]) for result in results]
+                return [_extract_entry(result[0], result[1]) for result in results]
         except ldap.NO_SUCH_OBJECT:
             self.module.fail_json(msg="Base not found: {}".format(self.base))
 
-    def _extract_entry(self, dn, attrs):
-        extracted = {'dn': dn}
-        for attr, val in list(attrs.items()):
-            if len(val) == 1:
-                extracted[attr] = val[0]
-            else:
-                extracted[attr] = val
-        return extracted
 
-    @property
-    def connection(self):
-        """ An authenticated connection to the LDAP server (cached). """
-        if self._connection is None:
-            self._connection = self._connect_to_ldap()
-
-        return self._connection
-
-    def _connect_to_ldap(self):
-        ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
-        connection = ldap.initialize(self.server_uri)
-
-        if self.start_tls:
-            connection.start_tls_s()
-
-        if self.bind_dn is not None:
-            connection.simple_bind_s(self.bind_dn, self.bind_pw)
-        else:
-            connection.sasl_interactive_bind_s('', ldap.sasl.external())
-
-        return connection
-
-
-main()
+if __name__ == '__main__':
+    main()
