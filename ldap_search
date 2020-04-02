@@ -1,15 +1,12 @@
-#!/usr/bin/python3
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 
-from traceback import format_exc
-from builtins import map
-from builtins import str
-from past.builtins import basestring
-from builtins import object
-from ansible.module_utils.basic import *
+# Copyright: (c) 2020, Sebastian Pfahl <eryx@gmx.net>
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
-import ldap
-import ldap.modlist
-import ldap.sasl
+ANSIBLE_METADATA = {'metadata_version': '1.1',
+                    'status': ['preview'],
+                    'supported_by': 'community'}
 
 DOCUMENTATION = """
 ---
@@ -17,9 +14,9 @@ module: ldap_search
 short_description: Queries a LDAP server.
 description:
     - Return the results of an LDAP search. Use Ansible's 'register' statement.
-
-notes: []
-version_added: null
+notes:
+    - Only supports Python3
+version_added: "1.0"
 author: Sebastian Pfahl
 requirements:
     - python-ldap
@@ -88,6 +85,17 @@ EXAMPLES = """
   register: ldap_group_gids
   become: True
 """
+
+from traceback import format_exc
+from builtins import map
+from builtins import str
+from past.builtins import basestring
+from builtins import object
+from ansible.module_utils.basic import *
+
+import ldap
+import ldap.modlist
+import ldap.sasl
 
 
 def main():
