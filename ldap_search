@@ -91,7 +91,8 @@ from builtins import map
 from builtins import str
 from past.builtins import basestring
 from builtins import object
-from ansible.module_utils.basic import *
+from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.basic import BOOLEANS
 
 import ldap
 import ldap.modlist
@@ -137,9 +138,6 @@ class LdapSearch(object):
         self._load_scope()
         self._load_attrs()
         self._load_schema()
-
-    def _utf8_param(self, name):
-        return self._force_utf8(self.module.params[name])
 
     def _load_schema(self):
         self.schema = self.module.boolean(self.module.params['schema'])
