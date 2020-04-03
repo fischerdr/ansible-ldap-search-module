@@ -26,11 +26,11 @@ author: Sebastian Pfahl
 requirements:
     - python-ldap
 options:
-    base:
+    dn:
         required: true
         type: str
         description:
-            - The LDAP search base.
+            - The LDAP DN to search in.
     scope:
         required: false
         choices: [ base, onelevel, subordinate, children ]
@@ -69,12 +69,12 @@ extends_documentation_fragment:
 EXAMPLES = """
 # Return all entries within the 'groups' organizational unit.
 - ldap_search:
-    base: "ou=groups,dc=example,dc=com"
+    dn: "ou=groups,dc=example,dc=com"
   register: ldap_groups
 
 # Return GIDs for all groups
-- ldap_entry:
-    base: "ou=groups,dc=example,dc=com"
+- ldap_search:
+    dn: "ou=groups,dc=example,dc=com"
     scope: "onelevel"
     attrs: "gidNumber"
   register: ldap_group_gids
@@ -99,7 +99,7 @@ except ImportError:
 def main():
     module = AnsibleModule(
         argument_spec=gen_specs(
-            base=dict(type='str', required=True),
+            dn=dict(type='str', required=True),
             scope=dict(type='str', default='base', choices=['base', 'onelevel', 'subordinate', 'children']),
             filter=dict(type='str', default='(objectClass=*)'),
             attrs=dict(type='raw', default=None),
@@ -142,7 +142,7 @@ class LdapSearch(LdapGeneric):
     def __init__(self, module):
         LdapGeneric.__init__(self, module)
 
-        self.base = self.module.params['base']
+        self.dn = self.module.params['dn']
         self.filterstr = self.module.params['filter']
         self.attrlist = []
         self._load_scope()
@@ -197,7 +197,7 @@ class LdapSearch(LdapGeneric):
     def perform_search(self):
         try:
             results = self.connection.search_s(
-                self.base,
+                self.dn,
                 self.scope,
                 filterstr=self.filterstr,
                 attrlist=self.attrlist,
@@ -208,7 +208,7 @@ class LdapSearch(LdapGeneric):
             else:
                 return [_extract_entry(result[0], result[1]) for result in results]
         except ldap.NO_SUCH_OBJECT:
-            self.module.fail_json(msg="Base not found: {}".format(self.base))
+            self.module.fail_json(msg="Base not found: {}".format(self.dn))
 
 
 if __name__ == '__main__':

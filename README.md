@@ -31,10 +31,10 @@ shown in the example:
     ldap_search:
 	  bind_dn: "cn=admin,dc=example,dc=com"
 	  bind_pw: "password"
+      server_uri: "ldap://ldap.example.com"
+      start_tls: True
+      validate_certs: True
       dn: "ou=People,dc=example,dc=com"
-      ou: People
-      objectClass: organizationalUnit
-      description: A bunch of Ansible-lovers.
 ```
 
 This example performs a task for each LDAP user `account`:
@@ -42,7 +42,7 @@ This example performs a task for each LDAP user `account`:
 ```yaml
 - name: 
   ldap_search:
-    base: "ou=People,dc=example,dc=com"
+    dn: "ou=People,dc=example,dc=com"
 	scope: "onelevel"
 	filter: "(objectClass=account)"
   register: ldap_user_search
